@@ -1,11 +1,13 @@
 #!/bin/bash
 
 let leak=2
-let p=26
-let i=18
+let p=30
+let i=20
 
 let acc=0
 let delta=0
+
+echo Running...
 
 while true; do
   let junction=$(cat /sys/class/drm/card0/device/hwmon/hwmon3/temp2_input)
@@ -27,14 +29,16 @@ while true; do
   if [ $pwm_target -gt 255 ]; then pwm_target=255; fi
   if [ $pwm_target -lt 0 ]; then pwm_target=0; fi
 
-  echo ================
-  echo temp: $temp
-  echo state: $state
-  echo target: $target
-  echo pwm_target: $pwm_target
-  echo delta: $delta
-  echo acc: $acc
-  echo fan: $fan
+  if [ $FANDEBUG ]; then
+    echo ================
+    echo temp: $temp
+    echo state: $state
+    echo target: $target
+    echo pwm_target: $pwm_target
+    echo delta: $delta
+    echo acc: $acc
+    echo fan: $fan
+  fi
 
   echo $pwm_target > /sys/class/drm/card0/device/hwmon/hwmon3/pwm1
 
