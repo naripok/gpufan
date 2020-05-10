@@ -1,0 +1,98 @@
+#!/usr/bin/python
+
+import os
+import sys
+import logging
+from time import sleep
+
+logging.basicConfig(level=logging.INFO)
+
+
+DEBUG = False
+DEVICE = '/sys/class/drm/card0/device/hwmon/hwmon3'
+TEMP_INPUT = '/temp1_input'
+
+# leaky pid params
+MIN_PWM = 38
+MIN_TEMP = 50
+MAX_TEMP = 80
+LEAK = 0.99
+P = 0.2
+I = 0.01
+
+
+def read(path):
+    with open(path, 'r') as f:
+        return str(f.read())
+
+def read_int(path):
+    return int(read(path))
+
+def write(path, s):
+    with open(path, 'w') as f:
+        return f.write(str(s))
+
+# check if device exists and is amdgpu
+if not os.path.isdir(DEVICE):
+    logging.error('Device not found. Exiting.')
+    sys.exit(1)
+
+if read(DEVICE + '/name') != 'amdgpu\n':
+    logging.error('Device is not amdgpu. Exiting.')
+    sys.exit(1)
+
+# cleanup function
+def clearExit():
+    write(DEVICE + '/pwm1_enable', 2)
+    logging.info('Setting fan to automatic control mode.')
+
+def scale_state(state, out=False):
+    if out:
+        v = (state + MIN_PWM) * 255 / (255 + MIN_PWM)
+    else:
+        v = (state - MIN_PWM) * 255 / (255 - MIN_PWM)
+    return max(v, 0)
+
+# init vars
+acc = 0
+delta = 0
+
+logging.info('Setting fan to manual control mode.')
+write(DEVICE + '/pwm1_enable', 1)
+
+logging.info('Running...')
+
+try:
+    while True:
+        temp = read_int(DEVICE + TEMP_INPUT) / 1000
+        state = scale_state(read_int(DEVICE + '/pwm1'))
+
+        target = max((temp - MIN_TEMP) * 255 / (MAX_TEMP - MIN_TEMP), 0)
+
+        delta = target - state
+        acc = max(min(acc * LEAK + delta, 1e5), -1e5)
+
+        pwm_target = int(min(max(round(scale_state(state, True) + delta * P + acc * I), 0), 255))
+
+        if DEBUG:
+            fan = read_int(DEVICE + '/fan1_input')
+            junction = read_int(DEVICE + '/temp2_input') / 1000
+            logging.info('===============')
+            logging.info(f'edge: {temp}')
+            logging.info(f'junction: {junction}')
+            logging.info(f'state: {state}')
+            logging.info(f'target: {target}')
+            logging.info(f'pwm_target: {pwm_target}')
+            logging.info(f'delta: {delta}')
+            logging.info(f'acc: {acc}')
+            logging.info(f'fan: {fan}')
+
+        write(DEVICE + '/pwm1', pwm_target)
+
+        sleep(0.1)
+
+except Exception as e:
+    logging.exception(e)
+
+finally:
+    clearExit()

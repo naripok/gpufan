@@ -1,5 +1,6 @@
 #!/bin/bash
 
+DEBUG=true
 DEVICE=/sys/class/drm/card0/device/hwmon/hwmon3
 
 # check if device exists and is amdgpu
@@ -22,7 +23,7 @@ trap clearExit EXIT
 
 # leaky pid params
 let alpha=2
-let p=46
+let p=40
 let i=20
 
 # init vars
@@ -52,7 +53,7 @@ while true; do
   if [ $pwm_target -gt 255 ]; then pwm_target=255; fi
   if [ $pwm_target -lt 0 ]; then pwm_target=0; fi
 
-  if [ $FANDEBUG ]; then
+  if [ $DEBUG ]; then
     let fan=$(cat $DEVICE/fan1_input)
     echo ================
     echo temp: $temp
