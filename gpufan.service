@@ -1,0 +1,10 @@
+[Unit]
+Description=Gpu Fan Control Daemon
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gpufan
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
