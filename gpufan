@@ -3,6 +3,7 @@
 import os
 import sys
 import logging
+import signal
 from time import sleep
 
 logging.basicConfig(level=logging.INFO)
@@ -41,11 +42,6 @@ if read(DEVICE + '/name') != 'amdgpu\n':
     logging.error('Device is not amdgpu. Exiting.')
     sys.exit(1)
 
-# cleanup function
-def clearExit():
-    write(DEVICE + '/pwm1_enable', 2)
-    logging.info('Setting fan to automatic control mode.')
-
 def scale_state(state, out=False):
     if out:
         v = (state + MIN_PWM) * 255 / (255 + MIN_PWM)
@@ -60,10 +56,17 @@ delta = 0
 logging.info('Setting fan to manual control mode.')
 write(DEVICE + '/pwm1_enable', 1)
 
-logging.info('Running...')
+# cleanup function
+run = True
+def exitHandler(sig, frame):
+    global run
+    run = False
+signal.signal(signal.SIGTERM, exitHandler)
+signal.signal(signal.SIGINT, exitHandler)
 
+logging.info('Running...')
 try:
-    while True:
+    while run:
         temp = read_int(DEVICE + TEMP_INPUT) / 1000
         state = scale_state(read_int(DEVICE + '/pwm1'))
 
@@ -90,9 +93,8 @@ try:
         write(DEVICE + '/pwm1', pwm_target)
 
         sleep(0.1)
-
 except Exception as e:
     logging.exception(e)
-
 finally:
-    clearExit()
+    write(DEVICE + '/pwm1_enable', 2)
+    logging.info('Setting fan to automatic control mode.')
