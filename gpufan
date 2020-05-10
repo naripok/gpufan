@@ -93,8 +93,10 @@ try:
         write(DEVICE + '/pwm1', pwm_target)
 
         sleep(0.1)
+
 except Exception as e:
     logging.exception(e)
+
 finally:
     write(DEVICE + '/pwm1_enable', 2)
     logging.info('Setting fan to automatic control mode.')
