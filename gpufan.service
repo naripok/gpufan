@@ -1,5 +1,6 @@
 [Unit]
 Description=Gpu Fan Control Daemon
+After=display-manager.service
 
 [Service]
 Type=simple
