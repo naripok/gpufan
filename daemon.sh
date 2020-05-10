@@ -7,7 +7,7 @@ function clearExit () {
 trap clearExit EXIT
 
 let alpha=2
-let p=42
+let p=46
 let i=20
 
 let acc=0
