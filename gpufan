@@ -18,11 +18,11 @@ FAN_INPUT = '/fan1_input'
 # leaky pid params
 MIN_PWM = 40
 MIN_TEMP = 45
-MAX_TEMP = 70
+MAX_TEMP = 75
 LEAK = 0.99
-ALPHA = 0.4
+ALPHA = 0.6
 P = 0.01
-I = 0.04
+I = 0.03
 
 
 def read(path):
