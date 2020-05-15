@@ -1,6 +1,6 @@
 # Radeon GPU Smooth Fan Control
 
-## Instalation
+## Installation
 
 - Modify the hardware lines on daemon.sh to correspond to you cards address
 - `$ sudo ./install.sh`
