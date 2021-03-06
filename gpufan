@@ -35,9 +35,9 @@ PWM_ENABLE = f'{PWM_OUT}_enable'
 MIN_PWM = 41
 MAX_PWM = 255
 MIN_TEMP = 50
-MAX_TEMP = 90
-ALPHA = 0.8
-P = 0.1
+MAX_TEMP = 95
+ALPHA = 0.9
+P = 0.08
 I = 0.03
 
 
