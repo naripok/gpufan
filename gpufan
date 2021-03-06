@@ -19,6 +19,8 @@ logging.basicConfig(level=logging.INFO)
 
 
 DEBUG = os.environ.get('DEBUG')
+
+# Device params
 DEVICE = '/sys/class/drm/card0/device/hwmon/hwmon3'
 EDGE_INPUT = '/temp1_input'
 JUNC_INPUT = '/temp2_input'
@@ -32,11 +34,10 @@ PWM_ENABLE = f'{PWM_OUT}_enable'
 # leaky pid params
 MIN_PWM = 41
 MAX_PWM = 255
-MIN_TEMP = 48
-MAX_TEMP = 85
-LEAK = 0.985
-ALPHA = 0.7
-P = 0.004
+MIN_TEMP = 50
+MAX_TEMP = 90
+ALPHA = 0.8
+P = 0.1
 I = 0.03
 
 
@@ -68,8 +69,8 @@ def clip(s, s_min=None, s_max=None):
     return s
 
 
-def scale_state(state, out=False):
-    if out:
+def scale_state(state, output=False):
+    if output:
         v = (state + MIN_PWM) * MAX_PWM / (MAX_PWM + MIN_PWM)
     else:
         v = (state - MIN_PWM) * MAX_PWM / (MAX_PWM - MIN_PWM)
@@ -84,7 +85,7 @@ def read_temp(input_path):
     return read_int(DEVICE + input_path) / 1000
 
 
-def convert_temp_to_pwm(temp):
+def temp_to_pwm(temp):
     return clip((temp - MIN_TEMP) * MAX_PWM / (MAX_TEMP - MIN_TEMP), s_min=0)
 
 
@@ -124,6 +125,7 @@ try:
 
     # init vars
     acc = 0
+    control_signal = MIN_PWM
 
     logging.info('Running...')
 
@@ -138,15 +140,18 @@ try:
             state = read_int(DEVICE + PWM_OUT)
 
             # calculate pid
-            prop = convert_temp_to_pwm(junction)
             scaled_state = scale_state(state)
+            target_state = temp_to_pwm(junction)
 
-            acc = max(min(acc * LEAK + (prop - scaled_state), 1e5), -1e5)
-            target = prop * P + acc * I
+            prop = target_state - scaled_state
+            acc = clip(acc + prop, s_min=-1e5, s_max=1e5)
+            pi = prop * P + acc * I
+
+            # first degree exponential moving average
+            control_signal = control_signal * ALPHA + pi * (1 - ALPHA)
 
             # convert output
-            pwm_target = scaled_state * ALPHA + target * (1 - ALPHA)
-            output = convert_output(scale_state(pwm_target, True))
+            output = convert_output(scale_state(control_signal, output=True))
 
             # write output
             write(DEVICE + PWM_OUT, output)
@@ -161,11 +166,10 @@ try:
                 logging.info(f' fan:          {fan} RPM')
 
                 logging.info('============== pid ==============')
+                logging.info(f' scaled_state: {scaled_state}')
                 logging.info(f' prop:         {prop}')
                 logging.info(f' acc:          {acc}')
-                logging.info(f' target:       {target}')
-                logging.info(f' pwm_target:   {pwm_target}')
-                logging.info(f' scaled_state: {scaled_state}')
+                logging.info(f' control:      {control_signal}')
                 logging.info(f' output:       {output}')
 
             sleep(0.1)
