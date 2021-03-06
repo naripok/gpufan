@@ -1,5 +1,9 @@
 #!/usr/bin/python
 
+"""
+AMD Gpu fan control
+"""
+
 import os
 import sys
 import logging
@@ -9,14 +13,25 @@ from time import sleep
 logging.basicConfig(level=logging.INFO)
 
 
-DEBUG = False
+###########################
+# Params
+###########################
+
+
+DEBUG = os.environ.get('DEBUG')
 DEVICE = '/sys/class/drm/card0/device/hwmon/hwmon3'
 EDGE_INPUT = '/temp1_input'
 JUNC_INPUT = '/temp2_input'
+MEM_INPUT = '/temp3_input'
+VDD_INPUT = '/in0_input'
 FAN_INPUT = '/fan1_input'
+DEVICE_NAME = '/name'
+PWM_OUT = '/pwm1'
+PWM_ENABLE = f'{PWM_OUT}_enable'
 
 # leaky pid params
 MIN_PWM = 41
+MAX_PWM = 255
 MIN_TEMP = 48
 MAX_TEMP = 85
 LEAK = 0.985
@@ -25,39 +40,75 @@ P = 0.004
 I = 0.03
 
 
+###########################
+# Functions
+###########################
+
+
 def read(path):
     with open(path, 'r') as f:
         return str(f.read())
 
+
 def read_int(path):
     return int(read(path))
+
 
 def write(path, s):
     with open(path, 'w') as f:
         return f.write(str(s))
+
+
+def clip(s, s_min=None, s_max=None):
+    if s_min:
+        s = max(s, s_min)
+    if s_max:
+        s = min(s, s_max)
+
+    return s
+
+
+def scale_state(state, out=False):
+    if out:
+        v = (state + MIN_PWM) * MAX_PWM / (MAX_PWM + MIN_PWM)
+    else:
+        v = (state - MIN_PWM) * MAX_PWM / (MAX_PWM - MIN_PWM)
+    return clip(v, s_min=0)
+
+
+def convert_output(signal):
+    return clip(int(round(signal)), s_min=0, s_max=255)
+
+
+def read_temp(input_path):
+    return read_int(DEVICE + input_path) / 1000
+
+
+def convert_temp_to_pwm(temp):
+    return clip((temp - MIN_TEMP) * MAX_PWM / (MAX_TEMP - MIN_TEMP), s_min=0)
+
+
+def set_control_manual():
+    write(DEVICE + PWM_ENABLE, 1)
+
+
+def set_control_auto():
+    write(DEVICE + PWM_ENABLE, 2)
+
+
+###########################
+# Main
+###########################
+
 
 # check if device exists and is amdgpu
 if not os.path.isdir(DEVICE):
     logging.error('Device not found. Exiting.')
     sys.exit(1)
 
-if read(DEVICE + '/name') != 'amdgpu\n':
+if read(DEVICE + DEVICE_NAME) != 'amdgpu\n':
     logging.error('Device is not amdgpu. Exiting.')
     sys.exit(1)
-
-def scale_state(state, out=False):
-    if out:
-        v = (state + MIN_PWM) * 255 / (255 + MIN_PWM)
-    else:
-        v = (state - MIN_PWM) * 255 / (255 - MIN_PWM)
-    return max(v, 0)
-
-# init vars
-acc = 0
-delta = 0
-
-logging.info('Setting fan to manual control mode.')
-write(DEVICE + '/pwm1_enable', 1)
 
 # cleanup function
 run = True
@@ -67,44 +118,64 @@ def exitHandler(sig, frame):
 signal.signal(signal.SIGTERM, exitHandler)
 signal.signal(signal.SIGINT, exitHandler)
 
-logging.info('Running...')
 try:
+    logging.info('Setting fan to manual control mode.')
+    set_control_manual()
+
+    # init vars
+    acc = 0
+
+    logging.info('Running...')
+
     while run:
-        temp = read_int(DEVICE + JUNC_INPUT) / 1000
-        state = read_int(DEVICE + '/pwm1')
-        scaled_state = scale_state(state)
-
-        prop = max((temp - MIN_TEMP) * 255 / (MAX_TEMP - MIN_TEMP), 0)
-        acc = max(min(acc * LEAK + (prop - scaled_state), 1e5), -1e5)
-        target = prop * P + acc * I
-
-        #  pwm_target = int(min(max(round(scale_state(state, True) + delta * P + acc * I), 0), 255))
-        pwm_target = scaled_state * ALPHA + target * (1 - ALPHA)
-        output = int(min(max(round(scale_state(pwm_target, True)), 0), 255))
-
-        if DEBUG:
+        try:
+            # read inputs
+            edge = read_temp(EDGE_INPUT)
+            junction = read_temp(JUNC_INPUT)
+            memory = read_temp(MEM_INPUT)
             fan = read_int(DEVICE + FAN_INPUT)
-            junction = read_int(DEVICE + JUNC_INPUT) / 1000
-            logging.info('===== env =====')
-            logging.info(f'edge: {temp}')
-            logging.info(f'junction: {junction}')
-            logging.info(f'state: {state}')
-            logging.info(f'scaled_state: {scaled_state}')
-            logging.info(f'fan: {fan}')
-            logging.info('===== pid =====')
-            logging.info(f'prop: {prop}')
-            logging.info(f'acc: {acc}')
-            logging.info(f'target: {target}')
-            logging.info(f'pwm_target: {pwm_target}')
-            logging.info(f'output: {output}')
+            vdd = read_int(DEVICE + VDD_INPUT)
+            state = read_int(DEVICE + PWM_OUT)
 
-        write(DEVICE + '/pwm1', output)
+            # calculate pid
+            prop = convert_temp_to_pwm(junction)
+            scaled_state = scale_state(state)
 
-        sleep(0.1)
+            acc = max(min(acc * LEAK + (prop - scaled_state), 1e5), -1e5)
+            target = prop * P + acc * I
+
+            # convert output
+            pwm_target = scaled_state * ALPHA + target * (1 - ALPHA)
+            output = convert_output(scale_state(pwm_target, True))
+
+            # write output
+            write(DEVICE + PWM_OUT, output)
+
+            if DEBUG:
+                logging.info('============== env ==============')
+                logging.info(f' vddgfx:       {vdd} mV')
+                logging.info(f' edge:         {edge} C')
+                logging.info(f' junction:     {junction} C')
+                logging.info(f' memory:       {memory} C')
+                logging.info(f' state:        {state}')
+                logging.info(f' fan:          {fan} RPM')
+
+                logging.info('============== pid ==============')
+                logging.info(f' prop:         {prop}')
+                logging.info(f' acc:          {acc}')
+                logging.info(f' target:       {target}')
+                logging.info(f' pwm_target:   {pwm_target}')
+                logging.info(f' scaled_state: {scaled_state}')
+                logging.info(f' output:       {output}')
+
+            sleep(0.1)
+
+        except KeyboardInterrupt:
+            break
 
 except Exception as e:
     logging.exception(e)
 
 finally:
-    write(DEVICE + '/pwm1_enable', 2)
     logging.info('Setting fan to automatic control mode.')
+    set_control_auto()
