@@ -16,12 +16,12 @@ JUNC_INPUT = '/temp2_input'
 FAN_INPUT = '/fan1_input'
 
 # leaky pid params
-MIN_PWM = 40
-MIN_TEMP = 45
-MAX_TEMP = 75
-LEAK = 0.99
-ALPHA = 0.6
-P = 0.01
+MIN_PWM = 41
+MIN_TEMP = 48
+MAX_TEMP = 85
+LEAK = 0.985
+ALPHA = 0.7
+P = 0.004
 I = 0.03
 
 
@@ -70,7 +70,7 @@ signal.signal(signal.SIGINT, exitHandler)
 logging.info('Running...')
 try:
     while run:
-        temp = read_int(DEVICE + EDGE_INPUT) / 1000
+        temp = read_int(DEVICE + JUNC_INPUT) / 1000
         state = read_int(DEVICE + '/pwm1')
         scaled_state = scale_state(state)
 
