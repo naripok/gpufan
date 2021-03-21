@@ -14,9 +14,9 @@ MAX_TEMP = 80
 MIN_PWM = 38
 MAX_PWM = 255
 ALPHA = 0.8
-LEAK = 0.01
+LEAK = 0.005
 P = 0.1
-I = 0.02
+I = 0.01
 
 # Device params
 DEVICE = '/sys/class/drm/card0/device/hwmon/hwmon3'
