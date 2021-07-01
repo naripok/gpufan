@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
 AMD Gpu fan control
@@ -14,7 +14,7 @@ MAX_TEMP = 80
 MIN_PWM = 38
 MAX_PWM = 255
 ALPHA = 0.8
-LEAK = 0.007
+LEAK = 0.004
 P = 0.1
 I = 0.01
 
