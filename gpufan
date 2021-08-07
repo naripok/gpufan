@@ -13,10 +13,10 @@ MIN_TEMP = 50
 MAX_TEMP = 80
 MIN_PWM = 38
 MAX_PWM = 255
-ALPHA = 0.8
-LEAK = 0.004
-P = 0.1
-I = 0.01
+ALPHA = 0.9
+LEAK = 0.00001
+P = 0.4
+I = 0.1
 
 # Device params
 DEVICE = '/sys/class/drm/card0/device/hwmon/hwmon0'
@@ -52,8 +52,8 @@ def read(path):
         return str(f.read())
 
 
-def read_int(path):
-    return int(read(path))
+def read_float(path):
+    return float(read(path))
 
 
 def write(path, s):
@@ -70,24 +70,20 @@ def clip(s, s_min=None, s_max=None):
     return s
 
 
-def scale_state(state, output=False):
-    if output:
-        v = clip((state + MIN_PWM + 6) * MAX_PWM / (MAX_PWM + MIN_PWM), s_min=MIN_PWM)
-    else:
-        v = clip((state - MIN_PWM - 6) * MAX_PWM / (MAX_PWM - MIN_PWM), s_min=0.0)
-    return v
-
-
-def convert_output(signal):
+def quantize_output(signal):
     return clip(int(round(signal)), s_min=0, s_max=255)
 
 
 def read_temp(input_path):
-    return read_int(DEVICE + input_path) / 1000
+    return read_float(DEVICE + input_path) / 1000.0
 
 
 def temp_to_pwm(temp):
-    return clip((temp - MIN_TEMP) * MAX_PWM / (MAX_TEMP - MIN_TEMP), s_min=0.0)
+    return clip(((temp - MIN_TEMP) * MAX_PWM) / (MAX_TEMP - MIN_TEMP), s_min=0.0)
+
+
+def control_to_output(pwm):
+    return clip((pwm - MIN_PWM) * MAX_PWM / (MAX_PWM - MIN_PWM), s_min=MIN_PWM)
 
 
 def set_control_manual():
@@ -127,6 +123,7 @@ def main():
 
       # init vars
       acc = 0
+
       control = MIN_PWM
 
       logging.info('Running...')
@@ -137,15 +134,14 @@ def main():
               edge = read_temp(EDGE_INPUT)
               junction = read_temp(JUNC_INPUT)
               memory = read_temp(MEM_INPUT)
-              fan = read_int(DEVICE + FAN_INPUT)
-              vdd = read_int(DEVICE + VDD_INPUT)
-              state = read_int(DEVICE + PWM_OUT)
+              fan = read_float(DEVICE + FAN_INPUT)
+              vdd = read_float(DEVICE + VDD_INPUT)
+              state = read_float(DEVICE + PWM_OUT)
 
               # calculate pid
-              scaled_state = scale_state(state)
               target_state = temp_to_pwm(junction)
 
-              prop = target_state - scaled_state
+              prop = target_state - state
               acc = clip(acc * (1 - LEAK) + prop, s_min=-1e5, s_max=1e5)
               pi = prop * P + acc * I
 
@@ -153,7 +149,7 @@ def main():
               control = clip(control * ALPHA + pi * (1 - ALPHA), s_min=0.0, s_max=99999999999.0)
 
               # convert output
-              output = convert_output(scale_state(control, output=True))
+              output = quantize_output(control_to_output(control))
 
               # write output
               write(DEVICE + PWM_OUT, output)
@@ -164,11 +160,11 @@ def main():
                   logging.info(f' edge:         {edge} C')
                   logging.info(f' junction:     {junction} C')
                   logging.info(f' memory:       {memory} C')
-                  logging.info(f' state:        {state}')
                   logging.info(f' fan:          {fan} RPM')
 
                   logging.info('============== pid ==============')
-                  logging.info(f' scaled_state: {scaled_state}')
+                  logging.info(f' state:        {state}')
+                  logging.info(f' target_state: {target_state}')
                   logging.info(f' prop:         {prop}')
                   logging.info(f' acc:          {acc}')
                   logging.info(f' control:      {control}')
