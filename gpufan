@@ -10,12 +10,12 @@ AMD Gpu fan control
 
 # pid params
 MIN_TEMP = 50
-MAX_TEMP = 80
+MAX_TEMP = 78
 MIN_PWM = 38
 MAX_PWM = 255
-ALPHA = 0.9
+ALPHA = 0.8
 LEAK = 0.00001
-P = 0.4
+P = 0.1
 I = 0.1
 
 # Device params
