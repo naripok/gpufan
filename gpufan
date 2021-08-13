@@ -9,9 +9,9 @@ AMD Gpu fan control
 ###########################
 
 # pid params
-MIN_TEMP = 50
-MAX_TEMP = 78
-MIN_PWM = 38
+MIN_TEMP = 45
+MAX_TEMP = 80
+MIN_PWM = 30
 MAX_PWM = 255
 ALPHA = 0.8
 LEAK = 0.00001
@@ -79,7 +79,7 @@ def read_temp(input_path):
 
 
 def temp_to_pwm(temp):
-    return clip(((temp - MIN_TEMP) * MAX_PWM) / (MAX_TEMP - MIN_TEMP), s_min=0.0)
+    return clip(((temp - MIN_TEMP) * MAX_PWM) / (MAX_TEMP - MIN_TEMP), s_min=MIN_PWM)
 
 
 def control_to_output(pwm):
@@ -142,7 +142,7 @@ def main():
               target_state = temp_to_pwm(junction)
 
               prop = target_state - state
-              acc = clip(acc * (1 - LEAK) + prop, s_min=-1e5, s_max=1e5)
+              acc = clip(acc * (1 - LEAK) + prop, s_min=0, s_max=1e5)
               pi = prop * P + acc * I
 
               # first degree exponential moving average
