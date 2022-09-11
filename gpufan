@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 """
 AMD Gpu fan control
 """
@@ -19,7 +18,7 @@ P = 0.1
 I = 0.1
 
 # Device params
-DEVICE = '/sys/class/drm/card0/device/hwmon/hwmon0'
+DEVICE = '/sys/class/drm/card1/device/hwmon/hwmon4'
 EDGE_INPUT = '/temp1_input'
 JUNC_INPUT = '/temp2_input'
 MEM_INPUT = '/temp3_input'
@@ -29,11 +28,9 @@ DEVICE_NAME = '/name'
 PWM_OUT = '/pwm1'
 PWM_ENABLE = f'{PWM_OUT}_enable'
 
-
 ###########################
 # Functions
 ###########################
-
 
 import os
 import sys
@@ -42,7 +39,6 @@ import signal
 from time import sleep
 
 logging.basicConfig(level=logging.INFO)
-
 
 DEBUG = os.environ.get('DEBUG')
 
@@ -79,7 +75,8 @@ def read_temp(input_path):
 
 
 def temp_to_pwm(temp):
-    return clip(((temp - MIN_TEMP) * MAX_PWM) / (MAX_TEMP - MIN_TEMP), s_min=MIN_PWM)
+    return clip(((temp - MIN_TEMP) * MAX_PWM) / (MAX_TEMP - MIN_TEMP),
+                s_min=MIN_PWM)
 
 
 def control_to_output(pwm):
@@ -100,88 +97,92 @@ def set_control_auto():
 
 
 def main():
-  # check if device exists and is amdgpu
-  if not os.path.isdir(DEVICE):
-      logging.error('Device not found. Exiting.')
-      sys.exit(1)
+    # check if device exists and is amdgpu
+    if not os.path.isdir(DEVICE):
+        logging.error('Device not found. Exiting.')
+        sys.exit(1)
 
-  if read(DEVICE + DEVICE_NAME) != 'amdgpu\n':
-      logging.error('Device is not amdgpu. Exiting.')
-      sys.exit(1)
+    if read(DEVICE + DEVICE_NAME) != 'amdgpu\n':
+        logging.error('Device is not amdgpu. Exiting.')
+        sys.exit(1)
 
-  # cleanup function
-  run = True
-  def exitHandler(sig, frame):
-      global run
-      run = False
-  signal.signal(signal.SIGTERM, exitHandler)
-  signal.signal(signal.SIGINT, exitHandler)
+    # cleanup function
+    run = True
 
-  try:
-      logging.info('Setting fan to manual control mode.')
-      set_control_manual()
+    def exitHandler(sig, frame):
+        global run
+        run = False
 
-      # init vars
-      acc = 0
+    signal.signal(signal.SIGTERM, exitHandler)
+    signal.signal(signal.SIGINT, exitHandler)
 
-      control = MIN_PWM
+    try:
+        logging.info('Setting fan to manual control mode.')
+        set_control_manual()
 
-      logging.info('Running...')
+        # init vars
+        acc = 0
 
-      while run:
-          try:
-              # read inputs
-              edge = read_temp(EDGE_INPUT)
-              junction = read_temp(JUNC_INPUT)
-              memory = read_temp(MEM_INPUT)
-              fan = read_float(DEVICE + FAN_INPUT)
-              vdd = read_float(DEVICE + VDD_INPUT)
-              state = read_float(DEVICE + PWM_OUT)
+        control = MIN_PWM
 
-              # calculate pid
-              target_state = temp_to_pwm(junction)
+        logging.info('Running...')
 
-              prop = target_state - state
-              acc = clip(acc * (1 - LEAK) + prop, s_min=0, s_max=1e5)
-              pi = prop * P + acc * I
+        while run:
+            try:
+                # read inputs
+                edge = read_temp(EDGE_INPUT)
+                junction = read_temp(JUNC_INPUT)
+                memory = read_temp(MEM_INPUT)
+                fan = read_float(DEVICE + FAN_INPUT)
+                vdd = read_float(DEVICE + VDD_INPUT)
+                state = read_float(DEVICE + PWM_OUT)
 
-              # first degree exponential moving average
-              control = clip(control * ALPHA + pi * (1 - ALPHA), s_min=0.0, s_max=99999999999.0)
+                # calculate pid
+                target_state = temp_to_pwm(junction)
 
-              # convert output
-              output = quantize_output(control_to_output(control))
+                prop = target_state - state
+                acc = clip(acc * (1 - LEAK) + prop, s_min=0, s_max=1e5)
+                pi = prop * P + acc * I
 
-              # write output
-              write(DEVICE + PWM_OUT, output)
+                # first degree exponential moving average
+                control = clip(control * ALPHA + pi * (1 - ALPHA),
+                               s_min=0.0,
+                               s_max=99999999999.0)
 
-              if DEBUG:
-                  logging.info('============== env ==============')
-                  logging.info(f' vddgfx:       {vdd} mV')
-                  logging.info(f' edge:         {edge} C')
-                  logging.info(f' junction:     {junction} C')
-                  logging.info(f' memory:       {memory} C')
-                  logging.info(f' fan:          {fan} RPM')
+                # convert output
+                output = quantize_output(control_to_output(control))
 
-                  logging.info('============== pid ==============')
-                  logging.info(f' state:        {state}')
-                  logging.info(f' target_state: {target_state}')
-                  logging.info(f' prop:         {prop}')
-                  logging.info(f' acc:          {acc}')
-                  logging.info(f' control:      {control}')
-                  logging.info(f' output:       {output}')
+                # write output
+                write(DEVICE + PWM_OUT, output)
 
-              sleep(0.1)
+                if DEBUG:
+                    logging.info('============== env ==============')
+                    logging.info(f' vddgfx:       {vdd} mV')
+                    logging.info(f' edge:         {edge} C')
+                    logging.info(f' junction:     {junction} C')
+                    logging.info(f' memory:       {memory} C')
+                    logging.info(f' fan:          {fan} RPM')
 
-          except KeyboardInterrupt:
-              break
+                    logging.info('============== pid ==============')
+                    logging.info(f' state:        {state}')
+                    logging.info(f' target_state: {target_state}')
+                    logging.info(f' prop:         {prop}')
+                    logging.info(f' acc:          {acc}')
+                    logging.info(f' control:      {control}')
+                    logging.info(f' output:       {output}')
 
-  except Exception as e:
-      logging.exception(e)
+                sleep(0.1)
 
-  finally:
-      logging.info('Setting fan to automatic control mode.')
-      set_control_auto()
+            except KeyboardInterrupt:
+                break
+
+    except Exception as e:
+        logging.exception(e)
+
+    finally:
+        logging.info('Setting fan to automatic control mode.')
+        set_control_auto()
 
 
 if __name__ == "__main__":
-  main()
+    main()

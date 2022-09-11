@@ -6,6 +6,8 @@ After=display-manager.service
 Type=simple
 ExecStart=/usr/bin/gpufan
 Restart=on-failure
+RestartSec=5
+
 
 [Install]
 WantedBy=multi-user.target
